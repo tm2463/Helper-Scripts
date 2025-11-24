@@ -21,7 +21,7 @@ def parse_args():
         help='Path to assembly dir (outdir)'
     )
     parser.add_argument(
-        '-s', '--file_suffix',
+        '-s', '--read_suffix',
         type=str,
         required=True,
         help='"x" is a placeholder to differentiate between read numbers. Example suffix: "_x.fastq.gz" or "x.fq"'
@@ -74,7 +74,7 @@ def generate_manifest(input_dir: Path, output: Path, suffix: str):
 
 def main():
     args = parse_args()
-    generate_manifest(args.input, args.output, args.file_suffix)
+    generate_manifest(args.input, args.output, args.read_suffix)
 
 
 if __name__ == '__main__':
