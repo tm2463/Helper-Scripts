@@ -94,11 +94,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+mkdir -p "$OUTDIR"
+
 N_JOBS=$(wc -l < $MAIN_LIST)
 N_CHUNKS=$(( ($N_JOBS + $BATCH_SIZE - 1) / $BATCH_SIZE ))
 BATCH_LIST=${OUTDIR}/batch_list.txt
-
-mkdir -p "$OUTDIR"
 
 > "$BATCH_LIST"
 for i in $(seq 1 $N_CHUNKS); do
@@ -114,11 +114,11 @@ done
 
 export CPUS
 MEM=$(( ${MEMORY} * 1024 )) #convert to Mb
-bsub -J ${JOB_TITLE}[1-${N_CHUNKS}]%$CONCURRENCY \
+bsub -J "${JOB_TITLE}[1-${N_CHUNKS}]%$CONCURRENCY" \
     -R "select[mem>${MEM}] rusage[mem=${MEM}] span[hosts=1]" \
     -M ${MEM} \
     -n ${CPUS} \
-	  -q ${QUEUE} \
-    -e ${LOG}.%J.%I.log \
-    -o ${LOG}.%J.%I.log \
-	  ${SCRIPT_PATH} # insert arguments
+    -q ${QUEUE} \
+    -e "${OUTDIR}/${LOG_FILE}.%J.%I.err.log" \
+    -o "${OUTDIR}/${LOG_FILE}.%J.%I.out.log" \
+    ${SCRIPT_PATH} "${OUTDIR}/batch_\${LSB_JOBINDEX}.txt"
