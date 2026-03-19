@@ -1,5 +1,0 @@
-/lustre/scratch127/pam/teams/team230/sm71/dev/3087-msweep_mgems/s.pneumo/gemsweep/close/results/SET_A/mGEMS
-/lustre/scratch127/pam/teams/team230/sm71/dev/3087-msweep_mgems/s.pneumo/gemsweep/close/results/SET_B/mGEMS
-/lustre/scratch127/pam/teams/team230/sm71/dev/3087-msweep_mgems/s.pneumo/gemsweep/close/results/SET_C/mGEMS
-/lustre/scratch127/pam/teams/team230/sm71/dev/3087-msweep_mgems/s.pneumo/gemsweep/close/results/SET_D/mGEMS
-/lustre/scratch127/pam/teams/team230/sm71/dev/3087-msweep_mgems/s.pneumo/gemsweep/close/results/SET_E/mGEMS
