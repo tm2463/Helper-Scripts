@@ -21,7 +21,7 @@ RUN pip3 install #dependencies
 
 # clone the repo and make script executable
 RUN git clone ${REPO_LINK} /opt/${TOOL_NAME} && \
-    chmod +x opt/${TOOL_NAME}/${EXECUTABLE}
+    chmod +x /opt/${TOOL_NAME}/${EXECUTABLE}
 
 # add exectable to path
 ENV PATH="/opt/${TOOL_NAME}:${PATH}"
