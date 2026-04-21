@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
 
-GRAPH_LIST=${1}
+CONTIG_LIST=${1}
+OUTDIR=${2}
+THREADS=${3}
+MEM=$((${4} - 2)) # Avoid memory issues
 
-while read -r index; do
-    OUTFILE=$(basename $index)
-    metagraph transform -v -p 8 --to-fasta --primary-kmers -o ${OUTFILE}.contigs --disk-swap /tmp --mem-cap-gb 32 $index
-done < $GRAPH_LIST
+# Create sublist of primary contigs
+while read -r line; do
+    for file in $line/*; do
+        realpath $file >> sublist.txt
+    done
+done < $CONTIG_LIST
 
 # Create a joint graph from all contigs in species index
-ls *.contigs.fasta.gz | metagraph build -v -p 8 -k 31 --mode canonical -o joint --disk-swap /tmp --mem-cap-gb 32
+cat sublist.txt | metagraph build -v -p $THREADS -k 31 --mode canonical -o joint --disk-swap /tmp --mem-cap-gb $MEM
 
-# Extract primary contigs from the joint graph
-metagraph transform -v -p 8 --to-fasta --primary-kmers -o joint_contigs_primary --disk-swap /tmp --mem-cap-gb 32 joint.dbg
-
-# Joint primary graph from all contigs
-metagraph build -v -p 8 -k 31 --mode primary -o combine --disk-swap /tmp --mem-cap-gb 32 joint_contigs_primary.fasta.gz
-
-# clean up
-rm joint*
-rm *.contigs.fasta.gz
+# Annotate joint graph
+metagraph annotate -v -p $THREADS --disk-swap /tmp --mem-cap-gb $MEM -i joint.dbg --anno-filename --separately --threads-each 1 -o annotation $(cat sublist.txt)
