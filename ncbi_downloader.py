@@ -14,6 +14,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--summary", type=str, required=True, help="NCBI summary tsv (i.e. https://ftp.ncbi.nlm.nih.gov/genomes/refseq/archaea/assembly_summary.txt)")
     parser.add_argument("--query", type=str, required=True, help="sqlite3 query to select data for download")
+    parser.add_argument("--preview", action="store_true", help="Preview query results without downloading")
     parser.add_argument("--outdir", type=Path, default=Path.cwd(), help="Path to output dir")
     parser.add_argument("--file_type", type=str, default="_genomic.fna.gz", help="FTP suffix (i.e. '_genomic.fna.gz)")
     return parser.parse_args()
@@ -47,6 +48,10 @@ def main():
     conn = sqlite3.connect(outdir / "summary.db")
     df.to_sql("summary", conn, if_exists="replace", index=False)
     result = pd.read_sql_query(args.query, conn)
+
+    if args.preview:
+        print(f"Query will return {len(result)} items")
+        return
 
     data = outdir / "data"
     data.mkdir(exist_ok=True, parents=True)
