@@ -13,11 +13,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git \
     python3-pip && \
-    #dependencies
     rm -rf /var/lib/apt/lists/*
-
-# install pip dependencies
-RUN pip3 install --no-cache-dir #dependencies
+    
+# copy and install pip dependencies
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Create working directory
 WORKDIR /opt/${TOOL_NAME}
@@ -25,6 +25,6 @@ WORKDIR /opt/${TOOL_NAME}
 # clone the repo and make script executable
 RUN git clone --depth 1 --branch "${VERSION}" ${REPO_LINK} . && \
     chmod +x /opt/${TOOL_NAME}/${EXECUTABLE}
-
-# add exectable to path
+    
+# add executable to path
 ENV PATH="/opt/${TOOL_NAME}:${PATH}"
