@@ -21,7 +21,7 @@ while IFS=$'\t' read -r fa r1 r2; do
     samtools sort -n -@ 4 -o "${OUTDIR}/${id}_sorted_mapping.bam" "${OUTDIR}/${id}_mapping.bam"
 
     # Then run paired-end extension. 
-    extension -t 8 -i "${fa}" -b "${OUTDIR}/${id}_sorted_mapping.bam" --pe-only -o ${OUTDIR}/extended_contigs -n "${id}"
+    copangraph/bin/release/extension -t 8 -i "${fa}" -b "${OUTDIR}/${id}_sorted_mapping.bam" --pe-only -o ${OUTDIR}/extended_contigs -n "${id}"
 
     rm ${OUTDIR}/*.bt2
     rm ${OUTDIR}/*.bam
