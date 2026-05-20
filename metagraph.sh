@@ -2,6 +2,8 @@
 
 # Metagraph is scary, this script makes it less so...
 
+set -euo pipefail
+
 MANIFEST=""
 OUTDIR=""
 CPUS=""
@@ -106,7 +108,7 @@ done
 
 echo "Commencing STAGE 2: Build graph from contigs"
 
-find "${OUTDIR}" -name "*.contigs.fasta.gz" | xargs metagraph build ${RES} \
+find "${OUTDIR}" -name "*.contigs.fasta.gz" | metagraph build ${RES} \
     -k "${MIN_K}" \
     --mode canonical \
     -o "${OUTDIR}/joint"
@@ -125,7 +127,7 @@ metagraph build ${RES} \
 
 rm ${OUTDIR}/batch*/*.dbg
 rm ${OUTDIR}/batch*/*.fasta.gz
-rm ${OUTDIR}/contigs.joint.dbg
+rm ${OUTDIR}/joint.dbg
 rm ${OUTDIR}/contigs.fasta.gz
 
 # STAGE 3
@@ -136,9 +138,8 @@ for batch in "${OUTDIR}"/batch*.txt; do
     batch_name=$(basename "${batch}" .txt)
     mkdir -p "${OUTDIR}/${batch_name}"
 
-    xargs metagraph annotate -i ${OUTDIR}/joint_graph.dbg \
+    metagraph annotate -i ${OUTDIR}/joint_graph.dbg \
         --anno-filename \
-        --coordinates \
         -p ${CPUS} \
         -o "${OUTDIR}/${batch_name}/${batch_name}" \
         < ${batch}
@@ -155,12 +156,11 @@ mkdir -p ${OUTDIR}/rd_columns
 transform_stage() {
     local stage="$1"
 
-    find ${OUTDIR} -name "*.column.annodbg" | xargs metagraph transform_anno ${RES} \
+    find ${OUTDIR} -name "*.column.annodbg" | metagraph transform_anno ${RES} \
         --anno-type row_diff \
         --row-diff-stage ${stage} \
         -i ${OUTDIR}/joint_graph.dbg \
-        -o ${OUTDIR}/rd_columns/out \
-        --coordinates
+        -o ${OUTDIR}/rd_columns/out
 }
 
 transform_stage 0
@@ -172,24 +172,23 @@ echo "Completed RowDiff Stage 1"
 transform_stage 2
 echo "Completed RowDiff Stage 2"
 
-find ${OUTDIR}/rd_columns -name "*.column.annodbg" | xargs metagraph transform_anno ${RES} \
-    --anno-type row_diff_brwt_coord \
+echo "Commencing STAGE 5: Transform columns and relax BRWT"
+
+find . -name "*.row_diff.annodbg" | metagraph transform_anno ${RES} \
+    --anno-type row_diff_brwt \
     -i ${OUTDIR}/joint_graph.dbg \
-    -o ${OUTDIR}/transformed
- 
-# STAGE 5
+    -o ${OUTDIR}/rd_brwt
 
-echo "Commencing STAGE 5: Map coordinates and relax BRWT"
+metagraph relax_brwt ${RES} \
+    --relax-arity 32 \
+    -o ${OUTDIR}/relaxed \
+    ${OUTDIR}/rd_brwt.row_diff_brwt.annodbg
 
-while read -r file; do
-    zcat $file >> ${OUTDIR}/map_seqs.fa
-done < ${MANIFEST}
+rm -r ${OUTDIR}/batch*
+rm -r ${OUTDIR}/rd_columns
+rm ${OUTDIR}/joint_graph.dbg.*
+rm ${OUTDIR}/rd_brwt.*
 
-metagraph annotate ${RES} \
-    -i ${OUTDIR}/joint_graph.dbg \
-    --anno-filename \
-    --index-header-coords \
-    -o ${OUTDIR}/annotation \
-    ${OUTDIR}/map_seqs.fa
-
- # Relax brwt
+echo "All stages complete!"
+echo "Final graph saved to ${OUTDIR}/joint_graph.dbg"
+echo "Final annotations saved to ${OUTDIR}/relaxed.row_diff_brwt.annodbg"
