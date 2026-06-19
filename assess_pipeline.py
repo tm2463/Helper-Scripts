@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+"""
+This script calculates compute resources and number of files generated for each process of a Nextflow pipeline
+Use it to diagnose any issues, such as which processes generate a large number of files, or assess how much compute each process requires
+"""
+
 from collections import defaultdict
 from pathlib import Path
 import glob
