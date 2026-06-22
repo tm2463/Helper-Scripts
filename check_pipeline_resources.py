@@ -168,12 +168,12 @@ class AssessCompute:
         bars1 = ax1.bar(
             [i - 0.2 for i in x], stats["realtime_mean"], width=0.4,
             label="Mean Realtime (s)", color="steelblue",
-            yerr=2 * stats["realtime_std"], capsize=3, error_kw={"ecolor": "steelblue", "alpha": 0.6}
+            yerr=stats["realtime_std"], capsize=3, error_kw={"ecolor": "steelblue", "alpha": 0.6}
         )
         bars2 = ax2.bar(
             [i + 0.2 for i in x], stats["peak_vmem_mean"], width=0.4,
             label="Max Peak vMem (MB)", color="coral",
-            yerr=2 * stats["peak_vmem_std"], capsize=3, error_kw={"ecolor": "coral", "alpha": 0.6}
+            yerr=stats["peak_vmem_std"], capsize=3, error_kw={"ecolor": "coral", "alpha": 0.6}
         )
 
         ax1.set_ylim(bottom=0)
