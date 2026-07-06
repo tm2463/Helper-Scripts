@@ -16,70 +16,28 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-class Time:
-    def __init__(self, time_str):
-        self.time_str = time_str
-
-    def to_seconds(self):
-        parts = self.time_str.split(" ")
-        
-        count = 0
-        for p in parts:
-            if p[-2:] == "ms":
-                num = p[:-2]
-                count += float(num) / 1000
-            elif p[-1] == "s":
-                num = p[:-1]
-                count += float(num)
-            elif p[-1] == "m":
-                num = p[:-1]
-                count += float(num) * 60
-            elif p[-1] == "h":
-                num = p[:-1]
-                count += float(num) * 3600
-            elif p[-1] == "d":
-                num = p[:-1]
-                count += float(num) * 86400
-            else:
-                raise ValueError(f"Invalid time format: {self.time_str}")
-        return count
-
-
-class Memory:
-    def __init__(self, mem_str):
-        self.mem_str = mem_str
-        
-    def to_mb(self):
-        parts = self.mem_str.split(" ")
-
-        if parts[0] == "0":
-            return float(0.0)
-
-        if len(parts) != 2:
-            raise ValueError(f"Invalid memory format: {self.mem_str}")
-        
-        val, unit = parts
-        val = float(val)
-
-        if unit == "KB":
-            return val / 1024
-        elif unit == "MB":
-            return val
-        elif unit == "GB":
-            return val * 1024
-        elif unit == "TB":
-            return val * 1024 * 1024
-        else:
-            raise ValueError(f"Invalid memory unit: {unit}")
-
-
 class FileCounter:
+    """
+    Take:
+        path: Path to Nextflow pipeline work dir
+        df: Cleaned execution trace
+        outdir: Path to output directory to save results
+
+    Return:
+        Saves a figure to outdir showing the number of files per process
+
+    Usage:
+        FileCounter(<path/to/work>, <cleaned_execution_trace_df>).run(<path/to/outdir>)
+    """
     def __init__(self, path, df):
         self.path = path
         self.df = df
 
     @staticmethod
     def _list_files_recursive(path, files=None):
+        """
+        Recursively find files in a directory and its subdirectories
+        """
         if files is None:
             files = []
 
@@ -92,7 +50,10 @@ class FileCounter:
 
         return files
     
-    def count_files(self):
+    def _count_files(self):
+        """
+        Count the number of files in each process's work directory
+        """
         _df = self.df[["hash", "name"]]
         process_dict = _df.set_index("hash")["name"].to_dict()
 
@@ -112,7 +73,10 @@ class FileCounter:
 
         return count_dict
 
-    def plot_file_counts(self, count_dict, outdir):
+    def _plot_file_counts(self, count_dict, outdir):
+        """
+        Plot the number of files per process and save the figure to outdir
+        """
         total = sum(count_dict.values())
         sorted_items = sorted(count_dict.items(), key=lambda x: x[1], reverse=True)
         processes, counts = zip(*sorted_items)
@@ -138,12 +102,33 @@ class FileCounter:
         plt.savefig(out_path, dpi=150)
         plt.close(fig)
 
+    def run(self, outdir):
+        """
+        Callable function to count files per process and plot the results
+        """
+        count_dict = self._count_files()
+        self._plot_file_counts(count_dict, outdir)
+
 
 class AssessCompute:
+    """
+    Take:
+        df: Cleaned execution trace
+        outdir: Path to output directory to save results
+
+    Return:
+        Saves a figure to outdir showing the mean and standard deviation of runtime and memory usage per process
+
+    Usage:
+        AssessCompute(<cleaned_execution_trace_df>).run(<path/to/outdir>)
+    """
     def __init__(self, df):
         self.df = df
 
-    def compute_stats(self):
+    def _compute_stats(self):
+        """
+        Returns a DataFrame with the mean and standard deviation of runtime and memory usage per process
+        """
         _df = self.df[["task_id", "name", "realtime", "peak_vmem"]]
 
         order = _df.groupby("name")["task_id"].min().sort_values()
@@ -158,7 +143,10 @@ class AssessCompute:
 
         return stats
 
-    def plot_compute_stats(self, stats, outdir):
+    def _plot_compute_stats(self, stats, outdir):
+        """
+        Plot the mean and standard deviation of runtime and memory usage per process
+        """
         processes = stats.index.tolist()
         x = range(len(processes))
 
@@ -193,6 +181,13 @@ class AssessCompute:
         plt.savefig(outdir / "compute_stats.png", dpi=150)
         plt.close(fig)
 
+    def run(self, outdir):
+        """
+        Callable function to compute and plot the mean and standard deviation of runtime and memory usage per process
+        """
+        stats = self._compute_stats()
+        self._plot_compute_stats(stats, outdir)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Quick and easy pipeline evaluation")
@@ -225,15 +220,66 @@ def validate_args(args):
     args.outdir.mkdir(parents=True, exist_ok=True)
 
 
+def parse_time_to_seconds(time_str):
+    """
+    Reformat execution trace time strings to seconds
+    """
+    parts = time_str.split(" ")
+
+    seconds = 0
+    for p in parts:
+        if p[-2:] == "ms":
+            seconds += float(p[:-2]) / 1000
+        elif p[-1] == "s":
+            seconds += float(p[:-1])
+        elif p[-1] == "m":
+            seconds += float(p[:-1]) * 60
+        elif p[-1] == "h":
+            seconds += float(p[:-1]) * 3600
+        elif p[-1] == "d":
+            seconds += float(p[:-1]) * 86400
+        else:
+            raise ValueError(f"Invalid time format: {time_str}")
+    return seconds
+
+
+def parse_memory_to_mb(mem_str):
+    """
+    Reformat execution trace memory strings to MB
+    """
+    parts = mem_str.split(" ")
+
+    if parts[0] == "0":
+        return 0.0
+
+    if len(parts) != 2:
+        raise ValueError(f"Invalid memory format: {mem_str}")
+
+    val, unit = parts
+    val = float(val)
+
+    units_to_mb = {"KB": 1 / 1024, "MB": 1, "GB": 1024, "TB": 1024 * 1024}
+    if unit not in units_to_mb:
+        raise ValueError(f"Invalid memory unit: {unit}")
+
+    return val * units_to_mb[unit]
+
+
 def clean_execution_trace(df):
+    """
+    (1) Take the execution trace
+    (2) Drop unnecessary columns
+    (3) Reformat time and memory
+    (4) Reformat name to be more readable
+    """
     df = df[["task_id", "hash", "name", "status", "duration", "realtime", "peak_vmem"]]
     df = df[df["status"].isin(["COMPLETED", "CACHED"])]
 
     for t in ["duration", "realtime"]:
-        df[t] = df[t].apply(lambda x: Time(x).to_seconds())
+        df[t] = df[t].apply(parse_time_to_seconds)
 
-    df["peak_vmem"] = df["peak_vmem"].apply(lambda x: Memory(x).to_mb())
-    
+    df["peak_vmem"] = df["peak_vmem"].apply(parse_memory_to_mb)
+
     parts = df["name"].str.split(" ").str[0].str.split(":")
     df["name"] = parts.str[-2] + ":" + parts.str[-1]
     return df
@@ -246,13 +292,9 @@ def main():
     df = pd.read_csv(args.execution_trace, sep='\t')
     df = clean_execution_trace(df)
 
-    fc = FileCounter(args.work_dir, df)
-    count_dict = fc.count_files()
-    fc.plot_file_counts(count_dict, args.outdir)
-
-    ac = AssessCompute(df)
-    stats = ac.compute_stats()
-    ac.plot_compute_stats(stats, args.outdir)
+    # Run file counting and compute assessment and save figures to output directory
+    FileCounter(args.work_dir, df).run(args.outdir)
+    AssessCompute(df).run(args.outdir)
 
 
 if __name__ == "__main__":
