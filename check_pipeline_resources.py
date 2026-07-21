@@ -3,6 +3,9 @@
 """
 This script calculates compute resources and number of files generated for each process of a Nextflow pipeline
 Use it to diagnose any issues, such as which processes generate a large number of files, or assess how much compute each process requires
+
+This script can also retrieve all the work directories for a specific process
+No more searching through endless work dir's to find the files you want!
 """
 
 from collections import defaultdict
@@ -10,6 +13,8 @@ from pathlib import Path
 import glob
 import os
 import argparse
+import re
+import shutil
 
 from tqdm import tqdm
 import pandas as pd
@@ -35,9 +40,7 @@ class FileCounter:
 
     @staticmethod
     def _list_files_recursive(path, files=None):
-        """
-        Recursively find files in a directory and its subdirectories
-        """
+        """Recursively find files in a directory and its subdirectories"""
         if files is None:
             files = []
 
@@ -51,9 +54,7 @@ class FileCounter:
         return files
     
     def _count_files(self):
-        """
-        Count the number of files in each process's work directory
-        """
+        """Count the number of files in each process's work directory"""
         _df = self.df[["hash", "name"]]
         process_dict = _df.set_index("hash")["name"].to_dict()
 
@@ -74,9 +75,7 @@ class FileCounter:
         return count_dict
 
     def _plot_file_counts(self, count_dict, outdir):
-        """
-        Plot the number of files per process and save the figure to outdir
-        """
+        """Plot the number of files per process and save the figure to outdir"""
         total = sum(count_dict.values())
         sorted_items = sorted(count_dict.items(), key=lambda x: x[1], reverse=True)
         processes, counts = zip(*sorted_items)
@@ -103,9 +102,7 @@ class FileCounter:
         plt.close(fig)
 
     def run(self, outdir):
-        """
-        Callable function to count files per process and plot the results
-        """
+        """Callable function to count files per process and plot the results"""
         count_dict = self._count_files()
         self._plot_file_counts(count_dict, outdir)
 
@@ -117,7 +114,7 @@ class AssessCompute:
         outdir: Path to output directory to save results
 
     Return:
-        Saves a figure to outdir showing the mean and standard deviation of runtime and memory usage per process
+        Saves a figure to outdir showing the distribution of runtime and memory usage per process
 
     Usage:
         AssessCompute(<cleaned_execution_trace_df>).run(<path/to/outdir>)
@@ -126,55 +123,63 @@ class AssessCompute:
         self.df = df
 
     def _compute_stats(self):
-        """
-        Returns a DataFrame with the mean and standard deviation of runtime and memory usage per process
-        """
+        """Returns process order plus raw per-process realtime/peak_vmem values for boxplotting"""
         _df = self.df[["task_id", "name", "realtime", "peak_vmem"]]
 
         order = _df.groupby("name")["task_id"].min().sort_values()
         process_order = order.index.tolist()
 
-        stats = _df.groupby("name").agg(
-            realtime_mean=("realtime", "mean"),
-            realtime_std=("realtime", "std"),
-            peak_vmem_mean=("peak_vmem", "mean"),
-            peak_vmem_std=("peak_vmem", "std")
-        ).reindex(process_order).fillna(0)
+        grouped = _df.groupby("name")
+        realtime_by_process = [grouped.get_group(name)["realtime"].tolist() for name in process_order]
+        peak_vmem_by_process = [grouped.get_group(name)["peak_vmem"].tolist() for name in process_order]
 
-        return stats
+        return process_order, realtime_by_process, peak_vmem_by_process
 
-    def _plot_compute_stats(self, stats, outdir):
-        """
-        Plot the mean and standard deviation of runtime and memory usage per process
-        """
-        processes = stats.index.tolist()
-        x = range(len(processes))
+    def _plot_compute_stats(self, processes, realtime_data, peak_vmem_data, outdir):
+        """Plot the distribution of runtime and memory usage per process"""
+        x = list(range(len(processes)))
+        positions1 = [i - 0.2 for i in x]
+        positions2 = [i + 0.2 for i in x]
 
         fig, ax1 = plt.subplots(figsize=(12, 6))
         ax2 = ax1.twinx()
 
-        bars1 = ax1.bar(
-            [i - 0.2 for i in x], stats["realtime_mean"], width=0.4,
-            label="Mean Realtime (s)", color="steelblue",
-            yerr=stats["realtime_std"], capsize=3, error_kw={"ecolor": "steelblue", "alpha": 0.6}
+        bars1 = ax1.boxplot(
+            realtime_data,
+            positions=positions1,
+            widths=0.35,
+            patch_artist=True,
+            boxprops=dict(facecolor="steelblue", alpha=0.6),
+            medianprops=dict(color="black"),
+            flierprops=dict(markersize=3),
         )
-        bars2 = ax2.bar(
-            [i + 0.2 for i in x], stats["peak_vmem_mean"], width=0.4,
-            label="Max Peak vMem (MB)", color="coral",
-            yerr=stats["peak_vmem_std"], capsize=3, error_kw={"ecolor": "coral", "alpha": 0.6}
+        bars2 = ax2.boxplot(
+            peak_vmem_data,
+            positions=positions2,
+            widths=0.35,
+            patch_artist=True,
+            boxprops=dict(facecolor="coral", alpha=0.6),
+            medianprops=dict(color="black"),
+            flierprops=dict(markersize=3),
         )
 
         ax1.set_ylim(bottom=0)
         ax2.set_ylim(bottom=0)
         ax1.set_xticks(x)
         ax1.set_xticklabels(processes, rotation=45, ha="right", fontsize=7)
+        ax1.set_xlim(-0.5, len(processes) - 0.5)
         ax1.set_xlabel("Process")
         ax1.set_ylabel("Realtime (s)")
         ax2.set_ylabel("Peak vMem (MB)")
         ax1.tick_params(axis="y")
         ax2.tick_params(axis="y")
 
-        ax1.legend([bars1, bars2], ["Mean Realtime (s)", "Mean Peak vMem (MB)"], loc="best")
+        # boxplot doesn't populate legends automatically, so build handles manually
+        ax1.legend(
+            [bars1["boxes"][0], bars2["boxes"][0]],
+            ["Realtime (s)", "Peak vMem (MB)"],
+            loc="best",
+        )
 
         plt.title("Runtime and Memory per Process")
         plt.tight_layout()
@@ -182,48 +187,13 @@ class AssessCompute:
         plt.close(fig)
 
     def run(self, outdir):
-        """
-        Callable function to compute and plot the mean and standard deviation of runtime and memory usage per process
-        """
-        stats = self._compute_stats()
-        self._plot_compute_stats(stats, outdir)
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Quick and easy pipeline evaluation")
-    parser.add_argument(
-        "--execution_trace",
-        type=Path,
-        required=True,
-        help="Path to Nextflow pipeline execution trace (e.g. /path/to/execution_trace.txt)"
-    )
-    parser.add_argument(
-        "--work_dir",
-        type=Path,
-        required=True,
-        help="Path to Nextflow pipeline work dir (e.g. /path/to/work)"
-    )
-    parser.add_argument(
-        "-o", "--outdir",
-        type=Path,
-        default=Path.cwd(),
-        help="Path to output directory to save results"
-    )
-    return parser.parse_args()
-
-
-def validate_args(args):
-    if not args.execution_trace.is_file():
-        raise FileNotFoundError(f"Execution trace file not found: {args.execution_trace}")
-    if not args.work_dir.is_dir():
-        raise NotADirectoryError(f"Work directory not found: {args.work_dir}")
-    args.outdir.mkdir(parents=True, exist_ok=True)
+        """Callable function to compute and plot the distribution of runtime and memory usage per process"""
+        processes, realtime_data, peak_vmem_data = self._compute_stats()
+        self._plot_compute_stats(processes, realtime_data, peak_vmem_data, outdir)
 
 
 def parse_time_to_seconds(time_str):
-    """
-    Reformat execution trace time strings to seconds
-    """
+    """Reformat execution trace time strings to seconds"""
     parts = time_str.split(" ")
 
     seconds = 0
@@ -244,9 +214,7 @@ def parse_time_to_seconds(time_str):
 
 
 def parse_memory_to_mb(mem_str):
-    """
-    Reformat execution trace memory strings to MB
-    """
+    """Reformat execution trace memory strings to MB"""
     parts = mem_str.split(" ")
 
     if parts[0] == "0":
@@ -285,16 +253,127 @@ def clean_execution_trace(df):
     return df
 
 
+def retrieve_work_dirs(output_log: Path, pattern: str, work_dir: Path, outdir: Path) -> list[Path]:
+    """Copy relevant work dirs to provide user with easy access to intermediate files"""
+    if not output_log.is_file():
+        raise FileNotFoundError(f"Nextflow output log not found: {output_log}")
+
+    hash_pattern = re.compile(r"(?<=\[)[0-9a-f]{2}/[0-9a-f]+(?=\])")
+
+    matches = set()
+    with output_log.open() as fh:
+        for line in fh:
+            if pattern not in line:
+                continue
+            match = hash_pattern.search(line)
+            if match:
+                matches.add(match.group())
+
+    if not matches:
+        print(f"No work dirs found matching pattern '{pattern}' in {output_log}")
+        return []
+
+    for short_hash in sorted(matches):
+        prefix, partial = short_hash.split("/")
+        # Nextflow logs only show a short hash prefix; the real dir has a longer hash
+        dir_list = list((work_dir / prefix).glob(f"{partial}*"))
+
+        if not dir_list:
+            print(f"Warning: no matching work dir for hash '{short_hash}' under {work_dir}")
+            continue
+
+        for dir in dir_list:
+            dest = outdir / f"{prefix}" / f"{dir.name}"
+            shutil.copytree(dir, dest, dirs_exist_ok=True)
+            print(f"Copied {dir} -> {dest}")
+    
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Quick and easy pipeline evaluation")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["evaluate", "process"],
+        required=True,
+        help="Choose required mode, see README for description"
+    )
+    parser.add_argument(
+        "--work_dir",
+        type=Path,
+        required=True,
+        help="Path to Nextflow pipeline work dir (e.g. /path/to/work)"
+    )
+    parser.add_argument(
+        "-o", "--outdir",
+        type=Path,
+        default=Path.cwd(),
+        help="Path to output directory to save results"
+    )
+
+    evaluate = parser.add_argument_group("evaluate")
+    evaluate.add_argument(
+        "--execution_trace",
+        type=Path,
+        help="Path to Nextflow pipeline execution trace (e.g. /path/to/execution_trace.txt) (Required for 'evaluate' mode)"
+    )
+
+    process = parser.add_argument_group("process")
+    process.add_argument(
+        "--pattern",
+        type=str,
+        help="Pattern to search nextflow output log to retrieve process work dirs (Required for 'process' mode)"
+    )
+    process.add_argument(
+        "--output_log",
+        type=Path,
+        help="Path to Nextflow '.o' output file (e.g. /path/to/job.o) (Required for 'process' mode)"
+    )
+
+    args = parser.parse_args()
+    validate_args(args, parser)
+    
+    return args
+
+
+def validate_args(args, parser):
+    # Args required by both modes
+    if not args.work_dir.is_dir():
+        raise NotADirectoryError(f"Work directory not found: {args.work_dir}")
+
+    if args.mode == "evaluate":
+        if args.execution_trace is None:
+            parser.error("--execution_trace is required when --mode is 'evaluate'")
+        if not args.execution_trace.is_file():
+            raise FileNotFoundError(f"Execution trace file not found: {args.execution_trace}")
+
+    elif args.mode == "process":
+        missing = [
+            name for name, val in
+            [("--pattern", args.pattern), ("--output_log", args.output_log)]
+            if val is None
+        ]
+        if missing:
+            parser.error(f"{', '.join(missing)} required when --mode is 'process'")
+        if not args.output_log.is_file():
+            raise FileNotFoundError(f"Nextflow output file not found: {args.output_log}")
+
+    args.outdir.mkdir(parents=True, exist_ok=True)
+
+
 def main():
     args = parse_args()
-    validate_args(args)
 
-    df = pd.read_csv(args.execution_trace, sep='\t')
-    df = clean_execution_trace(df)
+    if args.mode == "evaluate":
+        # parse and clean execution trace
+        df = pd.read_csv(args.execution_trace, sep='\t')
+        df = clean_execution_trace(df)
 
-    # Run file counting and compute assessment and save figures to output directory
-    FileCounter(args.work_dir, df).run(args.outdir)
-    AssessCompute(df).run(args.outdir)
+        # Run file counting and compute assessment and save figures to output directory
+        #FileCounter(args.work_dir, df).run(args.outdir)
+        AssessCompute(df).run(args.outdir)
+        
+    elif args.mode == "process":
+        retrieve_work_dirs(args.output_log, args.pattern, args.work_dir, args.outdir)
 
 
 if __name__ == "__main__":
