@@ -369,7 +369,7 @@ def main():
         df = clean_execution_trace(df)
 
         # Run file counting and compute assessment and save figures to output directory
-        #FileCounter(args.work_dir, df).run(args.outdir)
+        FileCounter(args.work_dir, df).run(args.outdir)
         AssessCompute(df).run(args.outdir)
         
     elif args.mode == "process":
